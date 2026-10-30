@@ -1,0 +1,17 @@
+{
+ "omrade": "SE3",
+ "prognoser": [
+  {
+   "kanda_priser_tom": "2026-10-28",
+   "url": "prognoser/2026-10-28.json"
+  },
+  {
+   "kanda_priser_tom": "2026-10-29",
+   "url": "prognoser/2026-10-29.json"
+  },
+  {
+   "kanda_priser_tom": "2026-10-30",
+   "url": "prognoser/2026-10-30.json"
+  }
+ ]
+}

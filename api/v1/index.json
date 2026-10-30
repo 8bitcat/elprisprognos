@@ -1,0 +1,57 @@
+{
+ "namn": "Elprisprognos",
+ "version": "1",
+ "omraden": [
+  "SE3"
+ ],
+ "beskrivning": "Prognos för spotpriset (Nord Pool day-ahead) 1–10 dygn framåt, per timme och per kvart, med osäkerhetsband (p10–p90). Varje prognos sparas och ändras aldrig, och träffsäkerheten redovisas öppet.",
+ "uppdateras": "dagligen ca 10:30 svensk tid, före Nord Pools auktion kl 12 (träffsäkerhet och inlärning även efter 13:00)",
+ "andpunkter": {
+  "senaste": "SE3/senaste.json",
+  "prognos_for_dag": "SE3/prognoser/<YYYY-MM-DD>.json  (datum = sista kända prisdygn när prognosen gjordes)",
+  "alla_prognoser": "SE3/prognoser/index.json",
+  "traffsakerhet": "SE3/traffsakerhet.json",
+  "inlarning": "SE3/inlarning.json"
+ },
+ "falt": {
+  "start/slut": "ISO 8601 med svensk tidszon",
+  "h": "prognoslängd i dygn",
+  "p50": "prognosen (median)",
+  "p10/p90": "8 av 10 utfall förväntas hamna mellan dessa"
+ },
+ "kallor": [
+  {
+   "namn": "Spotpriser (facit och historik)",
+   "kalla": "Nord Pool day-ahead via elprisetjustnu.se"
+  },
+  {
+   "namn": "Väderprognos",
+   "kalla": "ECMWF IFS 9 km via Open-Meteo (CC BY 4.0)"
+  },
+  {
+   "namn": "Väderutfall",
+   "kalla": "Open-Meteo Historical Weather API (CC BY 4.0)"
+  },
+  {
+   "namn": "Kärnkraftsstopp",
+   "kalla": "Nord Pool Urgent Market Messages (REMIT)"
+  },
+  {
+   "namn": "Vattenmagasin Norge",
+   "kalla": "NVE magasinstatistikk (NLOD)"
+  },
+  {
+   "namn": "Tysklands day-ahead",
+   "kalla": "Energy-Charts, Fraunhofer ISE (CC BY 4.0)"
+  },
+  {
+   "namn": "Magasin, förbrukning, Frankrikes kärnkraft",
+   "kalla": "ENTSO-E Transparency Platform"
+  },
+  {
+   "namn": "Tidsseriemodell",
+   "kalla": "Amazon Chronos-2 (Apache 2.0)"
+  }
+ ],
+ "licens": "Prognoserna får användas fritt med angivande av källa (CC BY 4.0). Underliggande data enligt källornas villkor."
+}

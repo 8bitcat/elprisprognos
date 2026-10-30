@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Elprisprognos SE3</title>
+<meta name="description" content="Öppen prognos för elpriset i SE3, kvart för kvart tio dygn framåt, med uppmätt träffsäkerhet och öppet API.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Dashboarden till det öppna API:t. Den läser bara API-filerna (api/v1/SE3/*.json) och hämtar dagens och morgondagens
+   riktiga priser direkt från elprisetjustnu.se. Svart = riktigt pris, blått = vår prognos, grått = jämförelseregeln. */
+:root {
+  --bg: #f5f7f9; --surface: #ffffff; --ink: #121820; --ink-2: #4c5866; --ink-3: #7a8592;
+  --line: #dbe1e7; --grid: #e9edf1;
+  --fc: #2a78d6; --fc-band: rgba(42,120,214,.16); --alt: #eb6834; --rule: #a3acb6;
+  --display: "Barlow Semi Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111418; --surface: #191d22; --ink: #eef1f4; --ink-2: #a9b3be; --ink-3: #7f8a96;
+  --line: #2c333b; --grid: #232930;
+  --fc: #3987e5; --fc-band: rgba(57,135,229,.22); --alt: #d95926; --rule: #6b7682;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #111418; --surface: #191d22; --ink: #eef1f4; --ink-2: #a9b3be; --ink-3: #7f8a96;
+  --line: #2c333b; --grid: #232930;
+  --fc: #3987e5; --fc-band: rgba(57,135,229,.22); --alt: #d95926; --rule: #6b7682;
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.55 var(--body); margin: 0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 48px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: .005em; }
+h1 { font-size: 2.2rem; line-height: 1.1; }
+h2 { font-size: 1.5rem; line-height: 1.2; }
+h3 { font-size: 1.08rem; }
+p { margin: 0; max-width: 72ch; }
+a { color: var(--fc); }
+.eyebrow { font: 600 .74rem/1 var(--body); text-transform: uppercase; letter-spacing: .09em; color: var(--ink-3); }
+.muted { color: var(--ink-2); }
+.small { font-size: .86rem; }
+.num { font-variant-numeric: tabular-nums; }
+header, section { display: grid; gap: 16px; min-width: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--ink-2); font-size: .9rem; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; display: grid; gap: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.tile .v { font: 600 2rem/1 var(--display); }
+.tile .v small { font-size: .9rem; font-weight: 500; color: var(--ink-2); margin-left: 3px; }
+.warn { border-left: 3px solid var(--alt); padding: 10px 14px; background: var(--surface); border-radius: 0 8px 8px 0; max-width: 80ch; }
+.row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.chart { position: relative; width: 100%; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.chart text { fill: var(--ink-3); font: 12px var(--body); font-variant-numeric: tabular-nums; }
+.chart text.mean { fill: var(--ink); font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+.chart text.note { fill: var(--ink-2); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .86rem; color: var(--ink-2); }
+.key { display: inline-flex; align-items: center; gap: 6px; }
+.key i { display: inline-block; width: 16px; height: 0; border-top: 2px solid; }
+.key i.thick { border-top-width: 3px; }
+.key i.dash { border-top-style: dashed; }
+.key i.box { height: 10px; border: 0; border-radius: 2px; }
+.key i.dot { width: 7px; height: 7px; border: 0; border-radius: 50%; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; font-size: .84rem; box-shadow: 0 4px 16px rgba(0,0,0,.12); min-width: 190px; z-index: 5; }
+.tip b { font-weight: 600; }
+.tip .r { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+.tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip .r i { width: 12px; border-top: 2px solid; display: inline-block; }
+.tip .note { color: var(--ink-2); margin-top: 4px; max-width: 240px; white-space: normal; }
+.days { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.day { font: inherit; text-align: left; cursor: pointer; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  display: grid; gap: 1px; background: var(--surface); color: var(--ink); }
+.day .d { font: 600 .74rem/1.2 var(--body); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+.day .p { font: 600 1.35rem/1.1 var(--display); }
+.day .p small { font-size: .78rem; color: var(--ink-2); font-weight: 500; margin-left: 2px; }
+.day .e { font-size: .8rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.day.real .e { color: var(--ink); }
+.day[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.day:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--fc); outline-offset: 2px; }
+.daystats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 16px; }
+.daystats div { display: grid; gap: 2px; }
+.daystats b { font: 600 1.25rem/1.1 var(--display); }
+.scroll { overflow-x: auto; min-width: 0; }
+.tablebox { max-height: 460px; overflow: auto; border: 1px solid var(--grid); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font: 600 .72rem var(--body); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); border-bottom-color: var(--line);
+  position: sticky; top: 0; background: var(--surface); }
+td.lo { font-weight: 600; } td.lo::after { content: " lägst"; font-size: .72em; color: var(--ink-3); font-weight: 500; }
+td.hi { font-weight: 600; } td.hi::after { content: " högst"; font-size: .72em; color: var(--ink-3); font-weight: 500; }
+tr.now td { background: var(--grid); }
+details summary { cursor: pointer; color: var(--ink-2); font-size: .9rem; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+code, pre { font: .86em/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; }
+code { background: var(--grid); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--grid); padding: 12px 14px; border-radius: 8px; overflow-x: auto; margin: 0; }
+.api { display: grid; gap: 0; }
+.api div { display: grid; grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); gap: 4px 16px; padding-block: 8px; border-bottom: 1px solid var(--grid); }
+.api a { word-break: break-all; }
+.empty { color: var(--ink-2); font-style: italic; }
+ul.plain { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+footer { color: var(--ink-3); font-size: .84rem; display: grid; gap: 4px; }
+@media (max-width: 620px) { .api div { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) { h1 { font-size: 1.75rem; } .tile .v { font-size: 1.7rem; } .panel { padding: 14px; }
+  #d-table th:nth-child(4), #d-table td:nth-child(4) { display: none; } th, td { padding: 6px 7px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Öppen prognos · elområde SE3 (Stockholm, Göteborg)</span>
+    <h1>Elpriset kvart för kvart, tio dygn framåt</h1>
+    <p class="muted">En prognos för spotpriset på Nord Pool (utan moms, skatt och nätavgift). Varje prognos sparas och ändras aldrig. Den jämförs med det riktiga priset, och felet redovisas öppet nedan.</p>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section aria-labelledby="err-h">
+    <h2 id="err-h">Så mycket kan prognosen slå fel</h2>
+    <p class="muted" id="err-lead"></p>
+    <div class="tiles" id="err-tiles"></div>
+  </section>
+
+  <section aria-labelledby="q-h">
+    <h2 id="q-h">Varje kvart de kommande tio dygnen</h2>
+    <p class="muted" id="q-lead"></p>
+    <div class="panel">
+      <div class="legend" id="q-legend"></div>
+      <div class="chart" id="q-chart"></div>
+    </div>
+    <p class="small muted">Välj ett dygn för att se alla dess kvartar:</p>
+    <div class="days" id="q-days" role="group" aria-label="Välj dygn"></div>
+    <div class="panel" id="d-panel">
+      <div class="row"><h3 id="d-title"></h3><span class="small muted" id="d-sub"></span></div>
+      <div class="daystats" id="d-stats"></div>
+      <p class="warn small" id="d-warn"></p>
+      <div class="legend" id="d-legend"></div>
+      <div class="chart" id="d-chart"></div>
+      <div class="tablebox"><table id="d-table"></table></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="it-h">
+    <h2 id="it-h">Så har felet gått ner, iteration för iteration</h2>
+    <p class="muted" id="it-lead"></p>
+    <div class="tiles" id="it-tiles"></div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Validering (juli 2025 – februari 2026)</h3>
+        <div class="legend" id="it-legend"></div>
+        <div class="chart" id="it-chart"></div>
+      </div>
+      <div class="panel">
+        <h3>Test (från mars 2026)</h3>
+        <div class="legend" id="it-legend-test"></div>
+        <div class="chart" id="it-chart-test"></div>
+      </div>
+    </div>
+    <p class="small muted" id="it-note"></p>
+    <details>
+      <summary>Per 100 iterationer och versionerna i drift</summary>
+      <div class="grid2" style="margin-top:12px">
+        <div class="panel scroll"><table id="it-blocks"></table></div>
+        <div class="panel scroll"><table id="it-versions"></table><p class="small muted" id="it-vnote"></p></div>
+      </div>
+    </details>
+  </section>
+
+  <section aria-labelledby="acc-h">
+    <h2 id="acc-h">Medelfel per kvart</h2>
+    <p class="muted" id="acc-lead"></p>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Per prognoslängd, öre/kWh per kvart</h3>
+        <div class="legend" id="acc-legend"></div>
+        <div class="chart" id="acc-chart"></div>
+      </div>
+      <div class="panel">
+        <h3>Över dygnets kvartar, öre/kWh</h3>
+        <div class="legend" id="slot-legend"></div>
+        <div class="chart" id="slot-chart"></div>
+      </div>
+    </div>
+    <div class="panel scroll"><table id="acc-table"></table></div>
+    <p class="small muted" id="acc-note"></p>
+  </section>
+
+  <section aria-labelledby="api-h">
+    <h2 id="api-h">Öppet API</h2>
+    <p class="muted">Allt på sidan kommer från statiska JSON-filer som vem som helst får hämta. De uppdateras varje dag ca 10:30, före Nord Pools auktion kl 12, och igen när nästa dygns priser publicerats ca 13:00. Git-historiken visar när varje prognos publicerades.</p>
+    <div class="panel api" id="api-list"></div>
+    <pre id="api-example"></pre>
+    <p class="small muted" id="api-license"></p>
+  </section>
+
+  <footer>
+    <span id="sources"></span>
+    <span>Riktiga priser i diagrammen hämtas direkt från elprisetjustnu.se (Nord Pool day-ahead).</span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+const API = "api/v1/", AREA = "SE3", NS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+const WD = ["sön", "mån", "tis", "ons", "tor", "fre", "lör"];
+const WDL = ["Söndag", "Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag"];
+const MON = ["januari", "februari", "mars", "april", "maj", "juni", "juli", "augusti", "september", "oktober", "november", "december"];
+const fmt = (v, d = 0) => v == null || Number.isNaN(v) ? "–" : v.toLocaleString("sv-SE", { minimumFractionDigits: d, maximumFractionDigits: d });
+const hh = (n) => String(n).padStart(2, "0");
+const dayName = (iso) => { const t = new Date(iso + "T12:00:00"); return `${WD[t.getDay()]} ${t.getDate()}/${t.getMonth() + 1}`; };
+const longDay = (iso) => { const t = new Date(iso + "T12:00:00"); return `${WDL[t.getDay()]} ${t.getDate()} ${MON[t.getMonth()]}`; };
+const slotTime = (s) => `${hh(Math.floor(s / 4))}:${hh((s % 4) * 15)}`;
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+const h = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); for (const k of kids) if (k != null) e.append(k); return e; };
+const key = (label, color, cls = "") => { const s = h("span", { className: "key" }); const i = h("i", { className: cls }); if (/box|dot/.test(cls)) i.style.background = color; else i.style.borderColor = color; s.append(i, label); return s; };
+const store = { get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+
+/* svensk tid oavsett var tittaren sitter */
+function stockholmNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, slot: +p.hour * 4 + Math.floor(+p.minute / 15) };
+}
+const addDays = (iso, n) => { const t = new Date(iso + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+/* "2026-10-31T00:15:00+01:00" → datum + kvart 0–95 (svensk väggklocka, som hos Nord Pool) */
+const parseStart = (s) => ({ d: s.slice(0, 10), s: +s.slice(11, 13) * 4 + Math.floor(+s.slice(14, 16) / 15) });
+
+async function getJSON(url) {
+  try { const r = await fetch(url, { cache: "no-cache" }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+}
+async function realPrices(date) {   // riktiga kvartspriser, publiceras ca 13:00 dagen innan
+  const [y, m, d] = date.split("-");
+  const rows = await getJSON(`https://www.elprisetjustnu.se/api/v1/prices/${y}/${m}-${d}_${AREA}.json`);
+  if (!rows) return [];
+  const seen = new Set(), out = [];
+  for (const r of rows) { const k = parseStart(r.time_start); if (seen.has(k.s)) continue; seen.add(k.s); out.push({ ...k, p: r.SEK_per_kWh * 100 }); }
+  return out;
+}
+
+/* ---------- diagrammotor: en y-skala, svagt rutnät, tooltip ---------- */
+function niceTicks(lo, hi, n = 5) {
+  const span = hi - lo || 1, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => span / s <= n) || mag * 10;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6)); return out;
+}
+function frame(container, height, yLo, yHi, suffix = "", dec = 0) {
+  container.textContent = "";
+  const W = Math.max(300, container.clientWidth || 640), H = height, m = { l: 44 + dec * 9, r: 12, t: 14, b: 28 };
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, container);
+  const ticks = niceTicks(yLo, yHi);
+  const lo = Math.min(yLo, ticks[0]), hi = Math.max(yHi, ticks[ticks.length - 1]);
+  const y = (v) => m.t + (H - m.t - m.b) * (1 - (v - lo) / (hi - lo || 1));
+  for (const t of ticks) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(t), y2: y(t), stroke: t === 0 ? "var(--ink-3)" : "var(--grid)", "stroke-width": 1 }, svg);
+    el("text", { x: m.l - 8, y: y(t) + 4, "text-anchor": "end" }, svg).textContent = fmt(t, dec) + suffix;
+  }
+  return { svg, W, H, m, y, lo, hi };
+}
+function tooltip(container) {
+  let tip = container.querySelector(".tip");
+  if (!tip) { tip = h("div", { className: "tip", hidden: true }); container.appendChild(tip); }
+  return {
+    show(x, rows, title, note) {
+      tip.textContent = "";
+      tip.append(h("div", {}, h("b", { textContent: title })));
+      for (const [label, value, color] of rows) {
+        const k = h("span"); if (color) { const i = h("i"); i.style.borderColor = color; k.append(i); } k.append(label);
+        tip.append(h("div", { className: "r" }, k, h("b", { textContent: value })));
+      }
+      if (note) tip.append(h("div", { className: "note", textContent: note }));
+      tip.hidden = false;
+      const cw = container.clientWidth, tw = tip.offsetWidth;
+      tip.style.left = Math.min(Math.max(0, x + 14), cw - tw) + "px"; tip.style.top = "8px";
+    },
+    hide() { tip.hidden = true; },
+  };
+}
+function crosshair(fr, container, n, xOf, onIndex, onClick) {
+  const { svg, m, H, W } = fr;
+  const line = el("line", { y1: m.t, y2: H - m.b, stroke: "var(--ink-3)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const hit = el("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: H, fill: "transparent", style: onClick ? "cursor:pointer" : "" }, svg);
+  const tip = tooltip(container);
+  const nearest = (ev) => {
+    const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * (W / r.width);
+    let best = 0, bd = Infinity; for (let i = 0; i < n; i++) { const d = Math.abs(xOf(i) - px); if (d < bd) { bd = d; best = i; } }
+    return [best, r];
+  };
+  hit.addEventListener("pointermove", (ev) => {
+    const [i, r] = nearest(ev);
+    line.setAttribute("x1", xOf(i)); line.setAttribute("x2", xOf(i)); line.setAttribute("visibility", "visible");
+    const [title, rows, note] = onIndex(i); tip.show(xOf(i) * (r.width / W), rows, title, note);
+  });
+  hit.addEventListener("pointerleave", () => { line.setAttribute("visibility", "hidden"); tip.hide(); });
+  if (onClick) hit.addEventListener("click", (ev) => onClick(nearest(ev)[0]));
+}
+function seriesPath(pts) { // bryter linjen där värden saknas
+  let d = "", pen = false;
+  for (const [x, v] of pts) { if (v == null || Number.isNaN(v)) { pen = false; continue; } d += `${pen ? "L" : "M"}${x.toFixed(1)},${v.toFixed(1)}`; pen = true; }
+  return d;
+}
+const line = (svg, pts, color, width = 2, extra = {}) => el("path", { d: seriesPath(pts), fill: "none", stroke: color, "stroke-width": width, "stroke-linejoin": "round", "stroke-linecap": "round", ...extra }, svg);
+function bandPath(idx, x, y, lo, hi) {
+  if (!idx.length) return "";
+  return idx.map((i, k) => `${k ? "L" : "M"}${x(i).toFixed(1)},${y(hi(i)).toFixed(1)}`).join("")
+    + idx.slice().reverse().map((i) => `L${x(i).toFixed(1)},${y(lo(i)).toFixed(1)}`).join("") + "Z";
+}
+function bar(svg, x0, w, v0, v1, fill, opacity = 1) {   // rundad i dataänden, förankrad i nollan
+  const top = Math.min(v0, v1), base = Math.max(v0, v1), up = v1 <= v0, r = Math.min(2, w / 2, (base - top) / 2);
+  const d = up ? `M${x0},${base}V${top + r}Q${x0},${top} ${x0 + r},${top}H${x0 + w - r}Q${x0 + w},${top} ${x0 + w},${top + r}V${base}Z`
+    : `M${x0},${top}V${base - r}Q${x0},${base} ${x0 + r},${base}H${x0 + w - r}Q${x0 + w},${base} ${x0 + w},${base - r}V${top}Z`;
+  el("path", { d, fill, opacity }, svg);
+}
+
+/* ---------- data ---------- */
+const S = { fc: null, acc: null, loop: null, index: null, real: [], t: [], days: [], sel: null, err: {} };
+
+/* typiskt fel per prognoslängd (backtest, vår kvartsprognos): öre och procent, och hur ofta priset hamnar i bandet */
+function errFor(h) { return S.err[h] || null; }
+
+function buildSeries() {
+  const now = stockholmNow(), rows = (S.fc && S.fc.kvartar && S.fc.kvartar[S.fc.huvudmodell.kvart]) || [];
+  const fcRows = rows.map((r) => ({ ...parseStart(r.start), h: r.h, p10: r.p10 * 100, p50: r.p50 * 100, p90: r.p90 * 100 }));
+  const said = new Map(fcRows.map((r) => [`${r.d}/${r.s}`, r])), realDays = new Set(S.real.map((r) => r.d));
+  const t = S.real.map((r) => { const f = said.get(`${r.d}/${r.s}`); return { d: r.d, s: r.s, real: r.p, sa: f ? f.p50 : null, h: f ? f.h : null }; });
+  for (const r of fcRows) if (r.d >= now.date && !realDays.has(r.d)) t.push(r);
+  t.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : a.s - b.s));
+  const by = {};
+  for (const r of t) { r.v = r.real ?? r.p50; (by[r.d] ??= []).push(r); }
+  S.days = Object.keys(by).map((d) => {
+    const g = by[d], vals = g.map((r) => r.v), real = g[0].real != null;
+    const lo = g.reduce((a, b) => (b.v < a.v ? b : a)), hi = g.reduce((a, b) => (b.v > a.v ? b : a));
+    return { d, real, rows: g, medel: vals.reduce((a, b) => a + b, 0) / vals.length, lo, hi, h: g.find((r) => r.h != null)?.h ?? null,
+      sa: real && g.some((r) => r.sa != null) ? g.reduce((a, r) => a + (r.sa ?? 0), 0) / g.length : null };
+  });
+  for (const r of t) r.medel = S.days.find((x) => x.d === r.d).medel;
+  S.t = t;
+}
+
+/* ---------- 1. så mycket kan prognosen slå fel ---------- */
+function renderErr() {
+  const tiles = $("err-tiles"), bt = S.acc && S.acc.backtest;
+  tiles.textContent = "";
+  if (!bt || !S.err[1]) { $("err-lead").textContent = "Träffsäkerheten visas när API:t är byggt."; return; }
+  const per = bt.period_kvart;
+  $("err-lead").textContent = `Vår prognos per kvart mot det riktiga priset, ${per ? `prövad i efterhand på ${fmt(per.morgnar, 0)} morgnar (${per.fran} – ${per.till})` : "prövad i efterhand"} `
+    + "med bara det som var känt varje morgon. Ju längre fram, desto större fel. Siffran är hur mycket en kvart i snitt missar, i öre/kWh och i procent av priset.";
+  for (const hz of [1, 2, 5, 10]) {
+    const e = errFor(hz); if (!e) continue;
+    tiles.append(h("div", { className: "tile" },
+      h("span", { className: "eyebrow", textContent: `${hz} dygn framåt` }),
+      h("span", { className: "v", innerHTML: `±${fmt(e.ore, 0)}<small>öre</small>` }),
+      h("span", { className: "small muted", textContent: `≈ ${fmt(e.pct, 0)} % av priset · ${fmt(e.band, 0)} % av kvartarna hamnade i bandet` })));
+  }
+}
+
+/* ---------- 2. varje kvart de kommande tio dygnen ---------- */
+function renderOverview() {
+  const chart = $("q-chart"), legend = $("q-legend"), t = S.t;
+  legend.textContent = "";
+  if (!t.length) { chart.textContent = ""; chart.append(h("p", { className: "empty", textContent: "Ingen prognos hittades." })); return; }
+  const hasReal = t.some((r) => r.real != null), hasSaid = t.some((r) => r.sa != null);
+  if (hasReal) legend.append(key("Riktigt pris (Nord Pool)", "var(--ink)", "thick"));
+  legend.append(key("Vår prognos", "var(--fc)"), key("8 av 10 kvartar väntas hamna här", "var(--fc-band)", "box"), key("Dygnsmedel", "var(--ink-2)", "dash"));
+  if (hasSaid) { const k = key("Vad prognosen sa", "var(--fc)"); k.querySelector("i").style.opacity = 0.45; legend.append(k); }
+  const vals = t.flatMap((r) => (r.real != null ? [r.real, r.sa] : [r.p10, r.p90])).filter((v) => v != null);
+  const fr = frame(chart, 300, Math.min(0, ...vals), Math.max(...vals) * 1.05);
+  const { svg, W, m, y } = fr, n = t.length, x = (i) => m.l + (W - m.l - m.r) * (i + 0.5) / n, step = (W - m.l - m.r) / n;
+  const fi = t.map((r, i) => (r.real == null ? i : -1)).filter((i) => i >= 0);
+  el("path", { d: bandPath(fi, x, y, (i) => t[i].p10, (i) => t[i].p90), fill: "var(--fc-band)" }, svg);
+  // markerat dygn
+  const sel = S.days.find((d) => d.d === S.sel);
+  if (sel) { const a = t.indexOf(sel.rows[0]), b = t.indexOf(sel.rows[sel.rows.length - 1]);
+    el("rect", { x: x(a) - step / 2, y: m.t, width: x(b) - x(a) + step, height: fr.H - m.t - m.b, fill: "var(--ink)", opacity: 0.05 }, svg); }
+  if (hasSaid) line(svg, t.map((r, i) => [x(i), r.sa == null ? null : y(r.sa)]), "var(--fc)", 1.25, { opacity: 0.45 });
+  line(svg, t.map((r, i) => [x(i), r.real == null ? y(r.p50) : null]), "var(--fc)", 1.75);
+  if (hasReal) line(svg, t.map((r, i) => [x(i), r.real == null ? null : y(r.real)]), "var(--ink)", 1.75);
+  const dayW = (W - m.l - m.r) / S.days.length;
+  S.days.forEach((d, j) => {
+    const a = t.indexOf(d.rows[0]), b = t.indexOf(d.rows[d.rows.length - 1]), x0 = x(a) - step / 2, x1 = x(b) + step / 2, ym = y(d.medel);
+    if (j) el("line", { x1: x0, x2: x0, y1: m.t, y2: fr.H - m.b, stroke: "var(--grid)" }, svg);
+    if (dayW > 46) el("text", { x: (x0 + x1) / 2, y: fr.H - 8, "text-anchor": "middle" }, svg).textContent = dayName(d.d);
+    el("line", { x1: x0, x2: x1, y1: ym, y2: ym, stroke: "var(--ink-2)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }, svg);
+    if (dayW > 30) el("text", { x: (x0 + x1) / 2, y: ym - 5, "text-anchor": "middle", class: "mean" }, svg).textContent = fmt(d.medel, 0);
+  });
+  const now = stockholmNow(), ni = t.findIndex((r) => r.d === now.date && r.s === now.slot);
+  if (ni >= 0) { el("line", { x1: x(ni), x2: x(ni), y1: m.t, y2: fr.H - m.b, stroke: "var(--ink-3)", "stroke-dasharray": "2 3" }, svg);
+    el("text", { x: x(ni) + 4, y: m.t + 10 }, svg).textContent = "nu"; }
+  crosshair(fr, chart, n, x, (i) => quarterTip(t[i]), (i) => selectDay(t[i].d));
+}
+function quarterTip(r) {
+  const title = `${dayName(r.d)} kl ${slotTime(r.s)}–${slotTime(r.s + 1 === 96 ? 0 : r.s + 1)}`;
+  if (r.real != null) return [title, [["Riktigt pris", `${fmt(r.real, 0)} öre`, "var(--ink)"],
+    ...(r.sa != null ? [["Prognosen sa", `${fmt(r.sa, 0)} öre`, "var(--fc)"]] : []), ["Dygnsmedel", `${fmt(r.medel, 0)} öre`, "var(--ink-2)"]]];
+  const e = errFor(r.h);
+  return [title, [["Prognos", `${fmt(r.p50, 0)} öre`, "var(--fc)"], ["8 av 10 hamnar mellan", `${fmt(r.p10, 0)}–${fmt(r.p90, 0)} öre`],
+    ["Dygnsmedel", `${fmt(r.medel, 0)} öre`, "var(--ink-2)"]],
+    e ? `Kan vara fel med ±${fmt(e.ore, 0)} öre: så mycket missar en kvart i snitt ${r.h} dygn framåt.` : null];
+}
+function renderDayButtons() {
+  const box = $("q-days"); box.textContent = "";
+  for (const d of S.days) {
+    const e = d.real ? null : errFor(d.h);
+    const b = h("button", { type: "button", className: `day${d.real ? " real" : ""}` },
+      h("span", { className: "d", textContent: dayName(d.d) }),
+      h("span", { className: "p", innerHTML: `${fmt(d.medel, 0)}<small>öre</small>` }),
+      h("span", { className: "e", textContent: d.real ? "riktigt pris" : e ? `±${fmt(e.ore, 0)} öre · ${d.h} dygn` : `${d.h} dygn` }));
+    b.setAttribute("aria-pressed", d.d === S.sel);
+    b.onclick = () => selectDay(d.d);
+    box.append(b);
+  }
+}
+function selectDay(d) { S.sel = d; renderDayButtons(); renderOverview(); renderDay(); }
+function renderDay() {
+  const d = S.days.find((x) => x.d === S.sel), chart = $("d-chart"), table = $("d-table"), legend = $("d-legend"), stats = $("d-stats");
+  [chart, table, legend, stats].forEach((e) => (e.textContent = ""));
+  if (!d) { $("d-panel").hidden = true; return; }
+  $("d-panel").hidden = false;
+  const e = d.real ? null : errFor(d.h);
+  $("d-title").textContent = longDay(d.d);
+  $("d-sub").textContent = d.real ? "riktiga priser från Nord Pool" : `prognos ${d.h} dygn framåt`;
+  const stat = (label, value, sub) => stats.append(h("div", {}, h("span", { className: "eyebrow", textContent: label }), h("b", { textContent: value }),
+    sub ? h("span", { className: "small muted", textContent: sub }) : null));
+  stat("Dygnsmedel", `${fmt(d.medel, 0)} öre`, d.real && d.sa != null ? `prognosen sa ${fmt(d.sa, 0)} öre` : null);
+  stat("Billigast", `kl ${slotTime(d.lo.s)}`, `${fmt(d.lo.v, 0)} öre`);
+  stat("Dyrast", `kl ${slotTime(d.hi.s)}`, `${fmt(d.hi.v, 0)} öre`);
+  if (e) stat("Kan vara fel med", `±${fmt(e.ore, 0)} öre`, `per kvart i snitt (≈ ${fmt(e.pct, 0)} %)`);
+  const warn = $("d-warn");
+  warn.hidden = d.real;
+  if (e) warn.textContent = `Det här är en prognos, inte ett pris. ${d.h} dygn framåt missar en kvart i snitt med ${fmt(e.ore, 0)} öre/kWh (≈ ${fmt(e.pct, 0)} % av priset). `
+    + `Det ljusblå bandet visar var 8 av 10 kvartar väntas hamna; i efterhandsprövningen hamnade ${fmt(e.band, 0)} av 100 kvartar där. Dygnsmedlet träffar bättre än enskilda kvartar.`;
+  // diagram: en stapel per kvart
+  const rows = d.rows, n = rows.length;
+  if (d.real) { legend.append(key("Riktigt pris", "var(--ink)", "box")); if (d.sa != null) legend.append(key("Vad prognosen sa", "var(--fc)")); }
+  else legend.append(key("Prognos per kvart", "var(--fc)", "box"), key("8 av 10 väntas hamna här", "var(--fc-band)", "box"));
+  legend.append(key("Dygnsmedel", "var(--ink-2)", "dash"));
+  const vals = rows.flatMap((r) => (d.real ? [r.real, r.sa] : [r.p10, r.p90, r.p50])).filter((v) => v != null);
+  const fr = frame(chart, 260, Math.min(0, ...vals), Math.max(...vals) * 1.05);
+  const { svg, W, m, y } = fr, step = (W - m.l - m.r) / n, x = (i) => m.l + step * (i + 0.5), gap = step > 5 ? 2 : 1, bw = Math.max(1, step - gap);
+  if (!d.real) el("path", { d: bandPath(rows.map((_, i) => i), x, y, (i) => rows[i].p10, (i) => rows[i].p90), fill: "var(--fc-band)" }, svg);
+  rows.forEach((r, i) => bar(svg, x(i) - bw / 2, bw, y(0), y(r.v), d.real ? "var(--ink)" : "var(--fc)", d.real ? 0.85 : 1));
+  if (d.real && d.sa != null) line(svg, rows.map((r, i) => [x(i), r.sa == null ? null : y(r.sa)]), "var(--fc)", 1.75);
+  el("line", { x1: m.l, x2: W - m.r, y1: y(d.medel), y2: y(d.medel), stroke: "var(--ink-2)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }, svg);
+  el("text", { x: W - m.r, y: y(d.medel) - 5, "text-anchor": "end", class: "mean" }, svg).textContent = `medel ${fmt(d.medel, 0)}`;
+  for (let hr = 0; hr < 24; hr += (W < 520 ? 6 : 3)) el("text", { x: x(hr * 4), y: fr.H - 8, "text-anchor": "middle" }, svg).textContent = hh(hr);
+  const now = stockholmNow();
+  if (d.d === now.date) { el("line", { x1: x(now.slot), x2: x(now.slot), y1: m.t, y2: fr.H - m.b, stroke: "var(--ink-3)", "stroke-dasharray": "2 3" }, svg);
+    el("text", { x: x(now.slot) + 4, y: m.t + 10 }, svg).textContent = "nu"; }
+  crosshair(fr, chart, n, x, (i) => quarterTip(rows[i]));
+  // tabellen: alla kvartar
+  const head = h("tr");
+  (d.real ? ["Kvart", "Riktigt pris", "Prognosen sa", "Skillnad"] : ["Kvart", "Prognos", "8 av 10 mellan", "Kan vara fel med"])
+    .forEach((s) => head.append(h("th", { textContent: s })));
+  const tb = h("tbody");
+  for (const r of rows) {
+    const tr = h("tr", { className: d.d === now.date && r.s === now.slot ? "now" : "" });
+    const v = h("td", { textContent: `${fmt(r.v, 1)} öre`, className: r === d.lo ? "lo" : r === d.hi ? "hi" : "" });
+    tr.append(h("td", { textContent: `${slotTime(r.s)}–${slotTime((r.s + 1) % 96)}` }), v);
+    if (d.real) tr.append(h("td", { textContent: r.sa == null ? "–" : `${fmt(r.sa, 1)} öre` }),
+      h("td", { textContent: r.sa == null ? "–" : `${r.sa >= r.real ? "+" : "−"}${fmt(Math.abs(r.sa - r.real), 1)} öre` }));
+    else tr.append(h("td", { textContent: `${fmt(r.p10, 0)}–${fmt(r.p90, 0)} öre` }), h("td", { textContent: e ? `±${fmt(e.ore, 0)} öre` : "–" }));
+    tb.append(tr);
+  }
+  table.append(h("thead", {}, head), tb);
+}
+
+/* ---------- 3. så har felet gått ner ---------- */
+function renderLoop() {
+  const L = S.loop, tiles = $("it-tiles");
+  tiles.textContent = "";
+  if (!L) { $("it-lead").textContent = "Inlärningen visas när den har kommit igång."; return; }
+  const it = L.iterationer, n = it.i.length, perDay = L.sek_per_iteration ? 86400 / L.sek_per_iteration : null;
+  $("it-lead").textContent = `En inlärningsslinga provar hela tiden nya varianter av prognosmodellen och behåller den bästa. Varje punkt är en iteration; linjen är det lägsta felet hittills. `
+    + `Felet mäts i procent av priset per timme, i snitt över dygn 1–10. Uppdaterad ${L.skapad.replace("T", " ")}.`;
+  const tile = (label, v, sub) => tiles.append(h("div", { className: "tile" }, h("span", { className: "eyebrow", textContent: label }),
+    h("span", { className: "v", innerHTML: v }), h("span", { className: "small muted", textContent: sub })));
+  tile("Iterationer", fmt(n, 0), perDay ? `≈ ${fmt(perDay, 0)} per dygn` : "");
+  tile("Bästa på validering", `${fmt(L.bast.val, 2)}<small>%</small>`, `från ${fmt(L.start.val, 2)} % (${fmt(L.bast.val - L.start.val, 2)} procentenheter)`);
+  tile("Samma variant på test", `${fmt(L.bast.test, 2)}<small>%</small>`, `utgångsläget ${fmt(L.start.test, 2)} %`);
+  const k = L.kandidat;
+  tile("Provkörs skarpt", k ? k.version.replace("slinga-", "nr ") : "–",
+    k ? `${(k.skarpt && k.skarpt.morgnar) || 0} av ${k.kravs_morgnar} morgnar med facit innan den kan ta över efter ${L.i_drift}` : `i drift: ${L.i_drift}`);
+  // validering: alla iterationer + bästa hittills
+  const yTop = Math.min(Math.max(...it.val), L.start.val + 1), yBot = Math.min(...it.val.filter((v) => v != null), ...it.bast.filter((v) => v != null));
+  $("it-legend").textContent = "";
+  $("it-legend").append(key("En iteration", "var(--ink-3)", "dot"), key("Bästa hittills", "var(--fc)", "thick"), key("Start", "var(--ink-2)", "dash"));
+  {
+    const chart = $("it-chart"), fr = frame(chart, 240, yBot - 0.05, yTop, " %", 1), { svg, W, m, y } = fr;
+    const x = (i) => m.l + (W - m.l - m.r) * (n > 1 ? i / (n - 1) : 0.5);
+    newData(fr, x, L.ny_data, it.i);
+    it.val.forEach((v, i) => { if (v == null) return; const over = v > fr.hi;
+      el("circle", { cx: x(i), cy: y(over ? fr.hi : v), r: 2, fill: "var(--ink-3)", opacity: over ? 0.25 : 0.5 }, svg); });
+    el("line", { x1: m.l, x2: W - m.r, y1: y(L.start.val), y2: y(L.start.val), stroke: "var(--ink-2)", "stroke-dasharray": "5 4" }, svg);
+    line(svg, it.bast.map((v, i) => [x(i), v == null ? null : y(v)]), "var(--fc)", 2.25, { "stroke-linejoin": "miter" });
+    el("text", { x: W - m.r, y: y(L.bast.val) + 15, "text-anchor": "end", class: "mean" }, svg).textContent = `${fmt(L.bast.val, 2)} %`;
+    axisIter(fr, x, it.i);
+    crosshair(fr, chart, n, x, (i) => [`Iteration ${it.i[i]} · ${it.t[i]}`, [["Den här varianten", `${fmt(it.val[i], 2)} %`, "var(--ink-3)"],
+      ["Bästa hittills", `${fmt(it.bast[i], 2)} %`, "var(--fc)"]]]);
+  }
+  // test: bästa variantens TEST-fel
+  $("it-legend-test").textContent = "";
+  $("it-legend-test").append(key("Bästa variantens fel på test", "var(--fc)", "thick"), key("Utgångsläget", "var(--ink-2)", "dash"));
+  {
+    const chart = $("it-chart-test"), tv = it.bast_test.filter((v) => v != null);
+    const fr = frame(chart, 240, Math.min(...tv, L.start.test) - 0.05, Math.max(...tv, L.start.test) + 0.05, " %", 1), { svg, W, m, y } = fr;
+    const x = (i) => m.l + (W - m.l - m.r) * (n > 1 ? i / (n - 1) : 0.5);
+    newData(fr, x, L.ny_data, it.i);
+    el("line", { x1: m.l, x2: W - m.r, y1: y(L.start.test), y2: y(L.start.test), stroke: "var(--ink-2)", "stroke-dasharray": "5 4" }, svg);
+    line(svg, it.bast_test.map((v, i) => [x(i), v == null ? null : y(v)]), "var(--fc)", 2.25, { "stroke-linejoin": "miter" });
+    el("text", { x: W - m.r, y: y(L.bast.test) + 15, "text-anchor": "end", class: "mean" }, svg).textContent = `${fmt(L.bast.test, 2)} %`;
+    axisIter(fr, x, it.i);
+    crosshair(fr, chart, n, x, (i) => [`Iteration ${it.i[i]} · ${it.t[i]}`, [["Bästa variantens test", `${fmt(it.bast_test[i], 2)} %`, "var(--fc)"],
+      ["Utgångsläget", `${fmt(L.start.test, 2)} %`, "var(--ink-2)"]]]);
+  }
+  $("it-note").textContent = "Validering = morgnar juli 2025 – februari 2026, där slingan väljer. Test = morgnar från mars 2026, som slingan aldrig väljer på; den visar om förbättringen håller på ny tid. "
+    + "Ett lägre fel på validering som inte syns på test är bara anpassning till valideringsperioden. \"Ny data\" betyder att underlaget byggdes om och den bästa mättes om. "
+    + `Varianter med fel över ${fmt(yTop, 1)} % ritas vid övre kanten.`;
+  // tabeller
+  const bt = $("it-blocks"); bt.textContent = "";
+  const bh = h("tr"); ["Iterationer", "Klar", "Bästa i blocket", "Bäst hittills", "Test"].forEach((s) => bh.append(h("th", { textContent: s })));
+  const bb = h("tbody");
+  for (const b of L.block.slice().reverse()) bb.append(h("tr", {}, h("td", { textContent: `${b.fran}–${b.till}` }), h("td", { textContent: b.t.slice(5) }),
+    h("td", { textContent: `${fmt(b.min, 2)} %` }), h("td", { textContent: `${fmt(b.bast, 2)} %` }), h("td", { textContent: b.test == null ? "–" : `${fmt(b.test, 2)} %` })));
+  bt.append(h("thead", {}, bh), bb);
+  const vt = $("it-versions"); vt.textContent = "";
+  const vh = h("tr"); ["Version", "Från", "Validering", "Test"].forEach((s) => vh.append(h("th", { textContent: s })));
+  const vb = h("tbody");
+  for (const v of L.versioner) vb.append(h("tr", {}, h("td", { textContent: v.version }), h("td", { textContent: v.datum.slice(0, 10) }),
+    h("td", { textContent: `${fmt(v.val, 2)} %` }), h("td", { textContent: v.test == null ? "–" : `${fmt(v.test, 2)} %` })));
+  vt.append(h("thead", {}, vh), vb);
+  $("it-vnote").textContent = "Versionerna mättes med månadsvis omträning, slingan med kvartalsvis. Jämför därför inom varje serie: slingans förbättring mot sitt eget utgångsläge, versionerna mot varandra.";
+}
+function newData(fr, x, at, ids) {   // där underlaget byggdes om; etiketten bara där den får plats
+  let last = -Infinity;
+  for (const i0 of at) {
+    const i = ids.indexOf(i0); if (i < 0) continue;
+    el("line", { x1: x(i), x2: x(i), y1: fr.m.t, y2: fr.H - fr.m.b, stroke: "var(--line)" }, fr.svg);
+    if (x(i) - last > 56) { el("text", { x: x(i) + 3, y: fr.m.t + 10, class: "note" }, fr.svg).textContent = "ny data"; last = x(i); }
+  }
+}
+function axisIter(fr, x, ids) {
+  const ticks = niceTicks(ids[0], ids[ids.length - 1], fr.W < 420 ? 3 : 6);
+  for (const t of ticks) { const i = ids.indexOf(t); if (i < 0) continue; el("text", { x: x(i), y: fr.H - 8, "text-anchor": "middle" }, fr.svg).textContent = fmt(t, 0); }
+}
+
+/* ---------- 4. medelfel per kvart ---------- */
+function renderAccuracy() {
+  const bt = S.acc && S.acc.backtest, live = S.acc && S.acc.skarpt;
+  const ours = bt && bt.kvart && bt.kvart.kvart_profil, rule = bt && bt.kvart && bt.kvart.kvart_regel_7d;
+  if (!ours) { $("acc-lead").textContent = "Visas när API:t är byggt."; return; }
+  $("acc-lead").textContent = "Hur mycket en enskild kvart i snitt missar, i öre/kWh. Jämförelsen är en enkel regel: samma kvart som snittet de senaste sju dygnen. "
+    + "Till höger samma fel fördelat över dygnets 96 kvartar: morgon- och kvällstopparna är svårast.";
+  // per prognoslängd: två staplar per dygn
+  $("acc-legend").textContent = "";
+  $("acc-legend").append(key("Vår prognos", "var(--fc)", "box"), key("Regeln: snitt 7 dygn", "var(--rule)", "box"));
+  {
+    const chart = $("acc-chart"), n = ours.length, vals = [...ours, ...(rule || [])].map((r) => r.medelfel * 100);
+    const fr = frame(chart, 240, 0, Math.max(...vals) * 1.08), { svg, W, m, y } = fr, gw = (W - m.l - m.r) / n, bw = Math.min(18, (gw - 10) / 2);
+    const x = (i) => m.l + gw * (i + 0.5);
+    ours.forEach((r, i) => {
+      bar(svg, x(i) - bw - 1, bw, y(0), y(r.medelfel * 100), "var(--fc)");
+      const q = rule && rule.find((z) => z.h === r.h); if (q) bar(svg, x(i) + 1, bw, y(0), y(q.medelfel * 100), "var(--rule)");
+      el("text", { x: x(i), y: fr.H - 8, "text-anchor": "middle" }, svg).textContent = r.h;
+    });
+    crosshair(fr, chart, n, x, (i) => { const r = ours[i], q = rule && rule.find((z) => z.h === r.h);
+      return [`${r.h} dygn framåt`, [["Vår prognos", `${fmt(r.medelfel * 100, 1)} öre (${fmt(r.procent, 0)} %)`, "var(--fc)"],
+        ...(q ? [["Regeln", `${fmt(q.medelfel * 100, 1)} öre (${fmt(q.procent, 0)} %)`, "var(--rule)"]] : [])]]; });
+  }
+  // över dygnets kvartar
+  const sl = bt.kvart_pa_dygnet || {};
+  $("slot-legend").textContent = "";
+  if (sl.alla) {
+    $("slot-legend").append(key("1 dygn framåt", "var(--fc)"), key("Snitt 1–10 dygn", "var(--alt)"));
+    const chart = $("slot-chart"), vals = [...(sl.dygn1 || []), ...sl.alla].map((r) => r.medelfel * 100);
+    const fr = frame(chart, 240, 0, Math.max(...vals) * 1.08), { svg, W, m, y } = fr, x = (s) => m.l + (W - m.l - m.r) * (s + 0.5) / 96;
+    if (sl.dygn1) line(svg, sl.dygn1.map((r) => [x(r.kvart), y(r.medelfel * 100)]), "var(--fc)", 2);
+    line(svg, sl.alla.map((r) => [x(r.kvart), y(r.medelfel * 100)]), "var(--alt)", 2);
+    for (let hr = 0; hr < 24; hr += (W < 420 ? 6 : 3)) el("text", { x: x(hr * 4), y: fr.H - 8, "text-anchor": "middle" }, svg).textContent = hh(hr);
+    crosshair(fr, chart, 96, x, (s) => { const a = sl.alla.find((r) => r.kvart === s), b = sl.dygn1 && sl.dygn1.find((r) => r.kvart === s);
+      return [`kl ${slotTime(s)}`, [...(b ? [["1 dygn framåt", `${fmt(b.medelfel * 100, 1)} öre (${fmt(b.procent, 0)} %)`, "var(--fc)"]] : []),
+        ...(a ? [["Snitt 1–10 dygn", `${fmt(a.medelfel * 100, 1)} öre (${fmt(a.procent, 0)} %)`, "var(--alt)"]] : [])]]; });
+  }
+  // tabell
+  const table = $("acc-table"); table.textContent = "";
+  const lo = live && live.kvart && live.kvart.kvart_profil;
+  const head = h("tr"); ["Dygn framåt", "Vår prognos", "I procent", "I bandet", "Regeln", "Skarpt hittills"].forEach((s) => head.append(h("th", { textContent: s })));
+  const tb = h("tbody");
+  for (const r of ours) {
+    const q = rule && rule.find((z) => z.h === r.h), l = lo && lo.find((z) => z.h === r.h);
+    tb.append(h("tr", {}, h("td", { textContent: r.h }), h("td", { textContent: `${fmt(r.medelfel * 100, 1)} öre` }), h("td", { textContent: `${fmt(r.procent, 0)} %` }),
+      h("td", { textContent: r.inom_bandet == null ? "–" : `${fmt(r.inom_bandet, 0)} %` }), h("td", { textContent: q ? `${fmt(q.medelfel * 100, 1)} öre` : "–" }),
+      h("td", { textContent: l ? `${fmt(l.medelfel * 100, 1)} öre (${fmt(l.antal / 96, 0)} d)` : "–" })));
+  }
+  table.append(h("thead", {}, head), tb);
+  $("acc-note").textContent = `Efterhandsprövning ${bt.period_kvart ? `${bt.period_kvart.fran} – ${bt.period_kvart.till}` : ""}: varje morgon fick modellen bara det som var känt då, även de väderprognoser som fanns. `
+    + "\"I bandet\" = andelen kvartar där priset hamnade mellan 10- och 90-procentsgränsen (målet är 80 %). \"Skarpt hittills\" = prognoser som publicerats i förväg och sedan fått facit; den kolumnen växer för varje dag.";
+}
+
+/* ---------- 5. API ---------- */
+function renderApi() {
+  const list = $("api-list"); list.textContent = "";
+  const base = new URL(API, location.href).href;
+  const rows = [["senaste.json", "Senaste prognosen: 240 timmar och 960 kvartar framåt, med p10/p50/p90."],
+    ["traffsakerhet.json", "Medelfel per prognoslängd: per kvart, timme och dygn, skarpt och efterhandsprövat, och per kvart på dygnet."],
+    ["inlarning.json", "Inlärningsslingan: felet för varje iteration, bästa hittills, versionerna i drift."],
+    ["prognoser/index.json", "Alla sparade prognoser. En fil per morgon, prognoser/<datum>.json, som aldrig ändras."]];
+  list.append(h("div", {}, h("a", { href: base + "index.json", textContent: base + "index.json" }), h("span", { className: "muted", textContent: "Beskrivning, fält, källor och licens." })));
+  for (const [f, text] of rows) list.append(h("div", {}, h("a", { href: `${base}${AREA}/${f}`, textContent: `${base}${AREA}/${f}` }), h("span", { className: "muted", textContent: text })));
+  $("api-example").textContent = `// pris i SEK/kWh, start/slut med svensk tidszon, h = dygn framåt\nconst r = await fetch("${base}${AREA}/senaste.json").then((r) => r.json());\nconst kvartar = r.kvartar[r.huvudmodell.kvart];  // [{ start, slut, h, p10, p50, p90 }, …]`;
+  if (S.index) {
+    $("api-license").textContent = S.index.licens || "";
+    $("sources").textContent = "Källor: " + (S.index.kallor || []).map((k) => `${k.namn}: ${k.kalla}`).join(" · ");
+  }
+}
+
+function renderMeta() {
+  const meta = $("meta"); meta.textContent = "";
+  if (!S.fc) { meta.append(h("span", { textContent: "Kunde inte läsa prognosen. Sidan måste öppnas via en webbserver, inte som fil." })); return; }
+  const lastReal = S.real.length ? S.real[S.real.length - 1].d : null;
+  meta.append(h("span", { textContent: `Prognosen gjord ${S.fc.utfardad.replace("T", " ")}` }),
+    h("span", { textContent: lastReal ? `Riktiga priser t.o.m. ${dayName(lastReal)}` : "Riktiga priser kunde inte hämtas" }),
+    h("span", { textContent: "Nästa dygns priser publiceras ca 13:00" }));
+  $("q-lead").textContent = `Svart linje = riktigt pris så långt det är känt${lastReal ? ` (t.o.m. ${dayName(lastReal)})` : ""}. Blå = vår prognos för varje kvart därefter, med ett band där 8 av 10 kvartar väntas hamna. `
+    + "Streckat = dygnsmedel. Peka på en kvart för detaljer, eller välj ett dygn nedan för alla dess 96 kvartar.";
+}
+
+function renderAll() { renderMeta(); renderErr(); renderDayButtons(); renderOverview(); renderDay(); renderLoop(); renderAccuracy(); renderApi(); }
+
+(async () => {
+  const now = stockholmNow();
+  const [fc, acc, loop, index, r0, r1] = await Promise.all([getJSON(`${API}${AREA}/senaste.json`), getJSON(`${API}${AREA}/traffsakerhet.json`),
+    getJSON(`${API}${AREA}/inlarning.json`), getJSON(`${API}index.json`), realPrices(now.date), realPrices(addDays(now.date, 1))]);
+  Object.assign(S, { fc, acc, loop, index, real: [...r0, ...r1] });
+  for (const r of (acc && acc.backtest && acc.backtest.kvart && acc.backtest.kvart.kvart_profil) || [])
+    S.err[r.h] = { ore: r.medelfel * 100, pct: r.procent, band: r.inom_bandet, antal: r.antal };
+  buildSeries();
+  S.sel = (S.days.find((d) => !d.real) || S.days[S.days.length - 1] || {}).d || null;   // första prognosdygnet
+  renderAll();
+  let w = innerWidth;
+  addEventListener("resize", () => { if (Math.abs(innerWidth - w) > 40) { w = innerWidth; renderAll(); } });
+})();
+</script>
+</body>
+</html>
