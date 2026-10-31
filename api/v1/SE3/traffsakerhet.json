@@ -1,7 +1,7 @@
 {
  "omrade": "SE3",
  "enhet": "SEK/kWh",
- "skapad": "2026-10-31T10:42",
+ "skapad": "2026-10-31T13:21",
  "forklaring": "medelfel = medelvärdet av |prognos − verkligt pris| (SEK/kWh). procent = summan av alla fel delat med summan av alla priser (felet i procent av snittpriset; ett vanligt procentsnitt fungerar inte eftersom priset ibland är nära noll). Per kvart och per timme räknas varje kvart/timme för sig; per dygn jämförs dygnssnitten. Backtest = samma metod körd i efterhand med bara det som var känt varje morgon (arkiverade väderprognoser). Skarpt = prognoser gjorda och publicerade i förväg.",
  "skarpt": {
   "period": {
