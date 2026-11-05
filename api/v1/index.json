@@ -5,13 +5,14 @@
   "SE3"
  ],
  "beskrivning": "Prognos för spotpriset (Nord Pool day-ahead) 1–10 dygn framåt, per timme och per kvart, med osäkerhetsband (p10–p90). Varje prognos sparas och ändras aldrig, och träffsäkerheten redovisas öppet.",
- "uppdateras": "dagligen ca 10:30 svensk tid, före Nord Pools auktion kl 12 (träffsäkerhet och inlärning även efter 13:00)",
+ "uppdateras": "dagligen ca 10:30 svensk tid, före Nord Pools auktion kl 12 (träffsäkerhet efter 13:00, inlärning och förra veckan var 30:e minut)",
  "andpunkter": {
   "senaste": "SE3/senaste.json",
   "prognos_for_dag": "SE3/prognoser/<YYYY-MM-DD>.json  (datum = sista kända prisdygn när prognosen gjordes)",
   "alla_prognoser": "SE3/prognoser/index.json",
   "traffsakerhet": "SE3/traffsakerhet.json",
-  "inlarning": "SE3/inlarning.json"
+  "inlarning": "SE3/inlarning.json",
+  "forra_veckan": "SE3/forra_veckan.json"
  },
  "falt": {
   "start/slut": "ISO 8601 med svensk tidszon",
