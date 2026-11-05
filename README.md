@@ -12,6 +12,8 @@ osäkerhetsband och uppmätt träffsäkerhet.
 | `api/v1/SE3/prognoser/<datum>.json` | Prognosen som gjordes den morgonen. Ändras aldrig |
 | `api/v1/SE3/traffsakerhet.json` | Medelfel per prognoslängd och per kvart på dygnet, skarpt och efterhandsprövat |
 | `api/v1/SE3/inlarning.json` | Inlärningsslingan: felet per iteration och versionerna i drift |
+| `api/v1/SE3/forra_veckan.json` | De sju senaste dygnen: riktigt pris per timme mot prognosen från för en vecka sedan och dagen före |
 
-Filerna uppdateras varje dag ca 10:30, före Nord Pools auktion kl 12. Commit-tiden i historiken visar att
+Prognosen görs varje dag ca 10:30, före Nord Pools auktion kl 12. Inlärningen och förra veckan uppdateras var 30:e
+minut (commits "Inlärning …"). Commit-tiden för "Prognos …" i historiken visar att
 prognosen fanns innan priset publicerades. Prognoserna får användas fritt med angivande av källa (CC BY 4.0).
