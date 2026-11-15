@@ -72,6 +72,11 @@
   {
    "kanda_priser_tom": "2026-11-14",
    "url": "prognoser/2026-11-14.json"
+  },
+  {
+   "kanda_priser_tom": "2026-11-15",
+   "url": "prognoser/2026-11-15.json",
+   "utfardad": "2026-11-15T11:08"
   }
  ]
 }
